@@ -1,0 +1,147 @@
+---
+title: "Predictions using the Weight Lifting Exercises Dataset"
+Author: "Yassine Hachaichi"
+output: html_notebook
+---
+1. Explore the data, especially focussing on the two paramaters we are interested in
+2. Model selection, where we try different models to help us answer our questions
+3. Model examination, to see wether our best model holds up to our standards
+4. A Conclusion where we answer the questions based on the data
+5. Predicting the classification of the model on test set
+
+## Importing data and exploation
+```{r}
+training <- read.csv("./pml-training.csv")
+testing <- read.csv("./pml-testing.csv")
+```
+
+```{r}
+dim(training)
+```
+
+```{r}
+head(training)
+```
+
+## Cleaning data
+```{r}
+maxNAPerc = 20
+maxNACount <- nrow(training) / 100 * maxNAPerc
+removeColumns <- which(colSums(is.na(training) | training=="") > maxNACount)
+training.cleaned01 <- training[,-removeColumns]
+testing.cleaned01 <- testing[,-removeColumns]
+```
+
+```{r}
+removeColumns <- grep("timestamp", names(training.cleaned01))
+training.cleaned02 <- training.cleaned01[,-c(1, removeColumns )]
+testing.cleaned02 <- testing.cleaned01[,-c(1, removeColumns )]
+```
+
+```{r}
+classeLevels <- levels(training.cleaned02$classe)
+training.cleaned03 <- data.frame(data.matrix(training.cleaned02))
+training.cleaned03$classe <- factor(training.cleaned03$classe, labels=classeLevels)
+testing.cleaned03 <- data.frame(data.matrix(testing.cleaned02))
+```
+
+```{r}
+training.cleaned <- training.cleaned03
+testing.cleaned <- testing.cleaned03
+```
+
+```{r}
+set.seed(19791108)
+library(caret)
+classeIndex <- which(names(training.cleaned) == "classe")
+partition <- createDataPartition(y=training.cleaned$classe, p=0.75, list=FALSE)
+training.subSetTrain <- training.cleaned[partition, ]
+training.subSetTest <- training.cleaned[-partition, ]
+```
+## Feature correlations
+
+```{r}
+correlations <- cor(training.subSetTrain[, -classeIndex], as.numeric(training.subSetTrain$classe))
+bestCorrelations <- subset(as.data.frame(as.table(correlations)), abs(Freq)>0.3)
+bestCorrelations
+```
+
+## Some graphical representations
+
+```{r}
+library(Rmisc)
+library(ggplot2)
+p1 <- ggplot(training.subSetTrain, aes(classe,pitch_forearm)) +
+geom_boxplot(aes(fill=classe))
+p2 <- ggplot(training.subSetTrain, aes(classe, magnet_arm_x)) +
+geom_boxplot(aes(fill=classe))
+multiplot(p1,p2,cols=2)
+```
+
+## The correlations heatmap
+
+```{r}
+library(corrplot)
+correlationMatrix <- cor(training.subSetTrain[, -classeIndex])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.9, exact=TRUE)
+excludeColumns <- c(highlyCorrelated, classeIndex)
+corrplot(correlationMatrix, method="color", type="lower", order="hclust", tl.cex=0.70, tl.col="black", tl.srt = 45, diag = FALSE)
+```
+
+
+## Classification methods
+## Random Forest
+```{r}
+library(rpart)
+library(rpart.plot)
+library(rattle)
+training <- read.csv("./pml-training.csv")
+testing <- read.csv("./pml-testing.csv")
+label <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+train <- training[label, ]
+test <- training[-label, ]
+```
+```{r}
+NZV <- nearZeroVar(train)
+train <- train[ ,-NZV]
+test <- test[ ,-NZV]
+label <- apply(train, 2, function(x) mean(is.na(x))) > 0.95
+train <- train[, -which(label, label == FALSE)]
+test <- test[, -which(label, label == FALSE)]
+train <- train[ , -(1:5)]
+test <- test[ , -(1:5)]
+```
+
+```{r}
+
+library(caret)
+set.seed(13908)
+control <- trainControl(method = "cv", number = 3, verboseIter=FALSE)
+modelRF <- train(classe ~ ., data = train, method = "rf", trControl = control)
+modelRF$finalModel
+```
+
+
+```{r}
+predictRF <- predict(modelRF, test)
+confMatRF <- confusionMatrix(predictRF, test$classe)
+confMatRF
+```
+## Gradient Boosting
+```{r}
+library(rpart)
+library(rpart.plot)
+library(rattle)
+```
+
+```{r}
+control <- trainControl(method = "repeatedcv", number = 5, repeats = 1, verboseIter = FALSE)
+modelGBM <- train(classe ~ ., data = train, trControl = control, method = "gbm", verbose = FALSE)
+modelGBM$finalModel
+```
+
+```{r}
+predictGBM <- predict(modelGBM, test)
+confMatGBM <- confusionMatrix(predictGBM, test$classe)
+confMatGBM
+```
